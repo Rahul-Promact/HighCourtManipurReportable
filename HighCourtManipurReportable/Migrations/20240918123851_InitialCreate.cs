@@ -27,7 +27,7 @@ namespace HighCourtManipurReportable.Migrations
                     Overrule = table.Column<string>(type: "text", nullable: true),
                     OveruleBy = table.Column<string>(type: "text", nullable: true),
                     Citation = table.Column<string>(type: "text", nullable: true),
-                    Coram = table.Column<string[]>(type: "text[]", nullable: true),
+                    Coram = table.Column<string>(type: "text", nullable: true),
                     Act = table.Column<string>(type: "text", nullable: true),
                     Bench = table.Column<string>(type: "text", nullable: true),
                     Result = table.Column<string>(type: "text", nullable: true),

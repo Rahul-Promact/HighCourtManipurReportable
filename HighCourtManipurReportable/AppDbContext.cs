@@ -13,7 +13,7 @@ namespace HighCourtManipurReportable
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseNpgsql("Server=localhost;Database=ManipurHighCourt;User Id=postgres;Password=root;");
+            optionsBuilder.UseNpgsql("Server=localhost;Database=ManipurCourtTest;User Id=postgres;Password=root;");
         }
     }
 }

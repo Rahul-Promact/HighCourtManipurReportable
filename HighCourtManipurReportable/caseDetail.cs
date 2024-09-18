@@ -19,7 +19,7 @@ namespace HighCourtManipurReportable
         public string? Overrule { get; set; }
         public string? OveruleBy { get; set; }
         public string? Citation { get; set; }
-        public string[]? Coram { get; set; }
+        public string? Coram { get; set; }
         public string? Act { get; set; }
         public string? Bench { get; set; }
         public string? Result { get; set; }

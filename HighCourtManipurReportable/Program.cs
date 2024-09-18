@@ -16,6 +16,10 @@ using iTextSharp.text.pdf;
 using iTextSharp.text.pdf.parser;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
+using System.Text.Json;
+using System.Diagnostics;
+using System.Threading;
 
 namespace HighCourtManipurReportable;
 
@@ -26,7 +30,7 @@ class Program
     {
         // Set up Chrome options
         var chromeOptions = new ChromeOptions();
-        chromeOptions.AddUserProfilePreference("download.default_directory", @"C:\CourtDetails\ManipurCourt"); // Set your download folder path
+        chromeOptions.AddUserProfilePreference("download.default_directory", @"C:\CourtDetails\ManipurTest"); // Set your download folder path
         chromeOptions.AddUserProfilePreference("download.prompt_for_download", false); // Disable download prompt
         chromeOptions.AddUserProfilePreference("plugins.always_open_pdf_externally", true); // Download PDFs directly instead of opening in Chrome
 
@@ -68,18 +72,21 @@ class Program
 
                 string[] judgeNames = new string[]
                      {
-                        
-                        "Hon'ble The Acting Chief Justice",
-                        "Hon'ble Mr Justice MV Muralidaran",
-                        "Hon'ble Mr Justice Ahanthem Bimol Singh",
-                        "Hon'ble Mr Justice A.Guneshwar Sharma",
-                        "Hon'ble Mrs. Justice Golmei Gaiphulshillu Kabui",
-                        "W. TONEN MEITEI",
-                        "YUMKHAM ROTHER - Presiding Officer",
-                        "K BRAJAKUMAR SHARMA - Member",
-                        "MAIBAM BINOYKUMAR SINGH",
-                        "OJESH MUTUM - MEMBER",
-                        "Hon'ble Mr Justice Kh Nobin Singh",
+
+
+                        "Hon'ble The Chief Justice",
+  "Hon'ble The Acting Chief Justice",
+  "Hon'ble Mr Justice MV Muralidaran",
+  "Hon'ble Mr Justice Ahanthem Bimol Singh",
+  "Hon'ble Mr Justice A.Guneshwar Sharma",
+  "Hon'ble Mrs. Justice Golmei Gaiphulshillu Kabui",
+
+  "W. TONEN MEITEI",
+  "YUMKHAM ROTHER - Presiding Officer",
+  "K BRAJAKUMAR SHARMA - Member",
+  "MAIBAM BINOYKUMAR SINGH",
+  "OJESH MUTUM - MEMBER",
+  "Hon'ble Mr Justice Kh Nobin Singh",
                         "Hon'ble Mr Justice N Kotiswar Singh",
                         "Honble Mr Justice Lanusungkum Jamir",
                         "Hon'ble Mr Justice Songkhupchung Serto",
@@ -244,7 +251,31 @@ class Program
                                                 casedetail.Type = rowData["Case Type/Case Number/Case Year"];
                                                 casedetail.CaseNo = $"WA {caseInfo[1]} of {caseInfo[2]}";
                                             }
-                                            casedetail.Dated = rowData["Order Date"];
+                                            string orderDate = rowData["Order Date"];
+                                            // Parse the date from dd-MM-yyyy format
+                                            DateTime parsedDate = DateTime.ParseExact(orderDate, "dd-MM-yyyy", CultureInfo.InvariantCulture);
+
+                                            // Format the date to MM-dd-yyyy for database insertion
+                                            string formattedDate = parsedDate.ToString("MM-dd-yyyy");
+                                            var options = new JsonSerializerOptions
+                                            {
+                                                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                                            };
+
+                                            string currentJudgeName = judgeNames[judgeIndex];
+
+                                            // Remove unwanted characters or perform necessary replacements
+                                            string cleanJudgeName = currentJudgeName.Replace("\u0027", "'");
+
+                                            // Add the cleaned name to the list
+                                            var members = new List<string> { cleanJudgeName };
+
+                                            // Serialize the list to a JSON string with custom options
+                                            string jsonMembers = JsonSerializer.Serialize(members, options);
+                                            casedetail.Coram = jsonMembers;
+                                            casedetail.CoramCount = members?.Count?? 0;
+                                            casedetail.Dated =formattedDate;
+                                            casedetail.Reportable = true;
 
                                             // Print the key-value pairs for the row
                                             foreach (var kvp in rowData)
@@ -257,63 +288,89 @@ class Program
                                             tableData.Add(rowData);
 
 
+                                          
+                                            string downloadDirectory = @"C:\CourtDetails\ManipurTest";
+                                            string sanitizedCaseNo = caseNo.Replace("/", "_"); // Replace / with _ or any valid character
+                                            string newFileName = $"{sanitizedCaseNo}_{cleanJudgeName}.pdf";
+
+
+
                                             pdfLinkElement.Click();
 
-                                            await Task.Delay(4000);
 
-                                            string downloadDirectory = @"C:\CourtDetails\ManipurCourt";
-                                            string sanitizedCaseNo = caseNo.Replace("/", "_"); // Replace / with _ or any valid character
-                                            string newFileName = $"{sanitizedCaseNo}.pdf";
+                                            await Task.Delay(6000);
 
-                                            
-
+                                            // Wait until the file is downloaded
                                             string downloadedFile = GetLatestDownloadedFile(downloadDirectory);
+                                            while (downloadedFile == null || !File.Exists(downloadedFile))
+                                            {
+                                                await Task.Delay(2000);
+                                                downloadedFile = GetLatestDownloadedFile(downloadDirectory);
+                                            }
+
 
                                             if (!string.IsNullOrEmpty(downloadedFile))
                                             {
+                                                await Task.Delay(2000);
                                                 string newFilePath = System.IO.Path.Combine(downloadDirectory, newFileName);
 
 
-
-                                                if (File.Exists(newFilePath))
+                                                if (!File.Exists(newFilePath))
                                                 {
-                                                    // Delete the existing file
-                                                    File.Delete(newFilePath);
-                                                    Console.WriteLine($"Existing file at {newFilePath} deleted.");
+                                                    try
+                                                    {
+                                                        // Attempt to rename the file
+                                                        File.Move(downloadedFile, newFilePath); // Rename the file
+                                                        Console.WriteLine($"Downloaded file renamed to: {newFilePath}");
+
+                                                        await Task.Delay(2000);
+
+                                                        // Once the file is confirmed at the new path, update the link
+                                                        casedetail.PdfLink = newFilePath;
+                                                        Console.WriteLine($"File is successfully renamed and available at: {newFilePath}");
+                                                    }
+                                                    catch (IOException ex)
+                                                    {
+                                                        Console.WriteLine($"Error renaming file: {ex.Message}");
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    Console.WriteLine($"File already exists at {newFilePath}. Skipping renaming.");
+                                                    // Optionally, you can set the PdfLink to the existing file path if needed
+                                                    casedetail.PdfLink = newFilePath;
                                                 }
 
-                                                File.Move(downloadedFile, newFilePath); // Rename the file
-                                                Console.WriteLine($"Downloaded file renamed to: {newFilePath}");
 
 
-                                                casedetail.PdfLink = newFilePath;
+
+
+
+
+
+                                                casedetail.Reportable = true;
 
                                                 using(var db=new AppDbContext())
                                                 {
-                                                    db.CaseDetails.Add(casedetail);
-                                                    db.SaveChanges();
+                                                    bool exists = db.CaseDetails.Any(cd =>
+                                                         cd.CaseNo == casedetail.CaseNo &&
+                                                         cd.Dated == casedetail.Dated);
+
+                                                    if (!exists)
+                                                    {
+                                                        // Add and save if no existing record is found
+                                                        db.CaseDetails.Add(casedetail);
+                                                        db.SaveChanges();
+                                                        Console.WriteLine("New case detail added.");
+                                                    }
+                                                    else
+                                                    {
+                                                        // Skip if record already exists
+                                                        Console.WriteLine("Case detail already exists. Skipping insert.");
+                                                    }
                                                 }
 
-                                                // Step 2: Extract text from the renamed PDF file
-                                                //string pdfText = ExtractTextFromPdf(newFilePath);
-
-                                                //Console.WriteLine(pdfText);
-
-                                                //// Step 3: Extract case details from the extracted text
-                                                //var caseDetail = ExtractCaseDetails(pdfText);
-
-                                                //// Step 4: Display or handle the case details
-                                                //Console.WriteLine($"Court: {caseDetail.Court}");
-                                                //Console.WriteLine($"Case No: {caseDetail.CaseNo}");
-                                                //Console.WriteLine($"Dated: {caseDetail.Dated}");
-                                                //Console.WriteLine($"Case Name: {caseDetail.CaseName}");
-                                                //Console.WriteLine($"Counsel: {caseDetail.Counsel}");
-                                                //Console.WriteLine($"Coram: {string.Join(", ", caseDetail.Coram ?? new string[0])}");
-                                                //Console.WriteLine($"Coram Count: {caseDetail.CoramCount}");
-                                                //Console.WriteLine($"Petitioner: {caseDetail.Petitioner}");
-                                                //Console.WriteLine($"Respondent: {caseDetail.Respondent}");
-                                                //Console.WriteLine($"Result: {caseDetail.Result}");
-                                                //Console.WriteLine($"Filename: {caseDetail.Filename}");
+                                              
 
                                             }
                                             else
@@ -343,7 +400,7 @@ class Program
                                         await Task.Delay(1000); // Small delay before retrying
                                     }
                                     // Handle "No records found" (CAPTCHA cracked but no records for the judge)
-                                    else if (textValue == "No records found")
+                                    else if (textValue == "Record not found")
                                     {
                                         Console.WriteLine("CAPTCHA cracked but no records found for the judge. Moving to next judge...");
                                         captchaCracked = true; // Proceed to the next judge
@@ -385,77 +442,6 @@ class Program
         }
     }
 
-    private static caseDetail ExtractCaseDetails(string pdfText)
-    {
-       
-            caseDetail caseDetails = new caseDetail();
-
-            // Extract Court
-            string courtPattern = @"IN THE (.*?)\n";
-            Match courtMatch = Regex.Match(pdfText, courtPattern);
-            caseDetails.Court = courtMatch.Success ? courtMatch.Groups[1].Value.Trim() : null;
-
-            // Extract Case Number
-            string caseNoPattern = @"WA No\.\s*(.*?)\s*Ref";
-            Match caseNoMatch = Regex.Match(pdfText, caseNoPattern);
-            caseDetails.CaseNo = caseNoMatch.Success ? caseNoMatch.Groups[1].Value.Trim() : null;
-
-
-            // Extract Date of Judgment & Order
-            string datePattern = @"Date of Judgment & Order\s*::\s*(.*?)\n";
-            Match dateMatch = Regex.Match(pdfText, datePattern);
-            caseDetails.Dated = dateMatch.Success ? dateMatch.Groups[1].Value.Trim() : null;
-
-            // Extract Case Name
-            string caseNamePattern = @"Shri (.*?)(?:\s*\.\.\s*Writ Appellant|(?:\s*Versus\s*|\s*For the|))";
-            Match caseNameMatch = Regex.Match(pdfText, caseNamePattern);
-            caseDetails.CaseName = caseNameMatch.Success ? caseNameMatch.Groups[1].Value.Trim() : null;
-
-            // Extract Counsel
-            string counselPattern = @"For the appellants\s*::\s*(.*?)\s*For the Respondents";
-            Match counselMatch = Regex.Match(pdfText, counselPattern, RegexOptions.Singleline);
-            caseDetails.Counsel = counselMatch.Success ? counselMatch.Groups[1].Value.Trim() : null;
-
-            // Extract Coram
-            string coramPattern = @"BEFORE\s*(.*?)\n";
-            Match coramMatch = Regex.Match(pdfText, coramPattern, RegexOptions.Singleline);
-            caseDetails.Coram = coramMatch.Success ? coramMatch.Groups[1].Value.Trim().Split('\n') : null;
-
-            // Extract Petitioner and Respondents
-            string petitionerPattern = @"Shri (.*?),\s*aged about";
-            Match petitionerMatch = Regex.Match(pdfText, petitionerPattern);
-            caseDetails.Petitioner = petitionerMatch.Success ? petitionerMatch.Groups[1].Value.Trim() : null;
-
-            string respondentPattern = @"(?:1\.|2\.|3\.)\s*(.*?)(?=\s*\.\.\s*Official Respondents|\s*\.\.\s*Private Respondent|$)";
-            MatchCollection respondentMatches = Regex.Matches(pdfText, respondentPattern);
-            caseDetails.Respondent = string.Join(", ", respondentMatches.Select(m => m.Groups[1].Value.Trim()));
-
-            return caseDetails;
-        
-    }
-
- 
-    private static string ExtractTextFromPdf(string pdfPath)
-    {
-       
-
-
-        StringBuilder text = new StringBuilder();
-
-        using (iTextSharp.text.pdf.PdfReader reader = new iTextSharp.text.pdf.PdfReader(pdfPath))
-        {
-            // Determine the number of pages to process (maximum of 2 or the actual number of pages)
-            int maxPages = Math.Min(reader.NumberOfPages, 2);
-
-            // Loop through the first two pages or up to the total number of pages, whichever is smaller
-            for (int i = 1; i <= maxPages; i++)
-            {
-                text.Append(iTextSharp.text.pdf.parser.PdfTextExtractor.GetTextFromPage(reader, i));
-            }
-        }
-
-        return text.ToString();
-    }
 
     private static string GetLatestDownloadedFile(string downloadDirectory)
     {
@@ -470,124 +456,6 @@ class Program
     }
 
 
-    //private static async Task<string> DownloadPdfAsync(string pdfLink, string caseNo)
-    //{
-    //    // Define the folder where you want to save the PDF
-    //    string folderPath = @"C:\CourtDetails\ManipurCourt";
-
-    //    try
-    //    {
-    //        // Ensure the directory exists
-    //        if (!Directory.Exists(folderPath))
-    //        {
-    //            Directory.CreateDirectory(folderPath);
-    //        }
-
-    //        // Ensure caseNo is not null and sanitize it if needed
-    //        var sanitizedCaseNo = string.IsNullOrWhiteSpace(caseNo) ? "DefaultName" : caseNo;
-    //        sanitizedCaseNo = new string(sanitizedCaseNo.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c).ToArray());
-
-    //        // Create the full file path with the sanitized case number
-    //        var filePath = Path.Combine(folderPath, $"{sanitizedCaseNo}.pdf");
-
-    //        using (var httpClient = new HttpClient())
-    //        {
-    //            // Send a GET request to the PDF URL
-    //            var response = await httpClient.GetAsync(pdfLink);
-
-    //            // Check if the response indicates success
-    //            if (!response.IsSuccessStatusCode)
-    //            {
-    //                throw new Exception($"Failed to download PDF. Status code: {response.StatusCode}");
-    //            }
-
-    //            // Ensure the content type is PDF
-    //            if (response.Content.Headers.ContentType.MediaType != "application/pdf")
-    //            {
-    //                throw new Exception("The URL does not point to a PDF file.");
-    //            }
-
-    //            // Read and save the PDF file
-    //            using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
-    //            {
-    //                await response.Content.CopyToAsync(fileStream);
-    //            }
-    //        }
-
-    //        // Return the path to the downloaded file
-    //        return filePath;
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        // Handle exceptions, such as network errors or file access issues
-    //        Console.WriteLine($"Error downloading PDF: {ex.Message}");
-    //        return string.Empty;
-    //    }
-    //}
-    //private static async Task ProcessPdfAsync(string pdfLink)
-    //{
-    //    try
-    //    {
-    //        var pdfText = await ExtractTextFromPdfAsync(pdfLink);
-
-    //        // Process the extracted text
-    //        Console.WriteLine("Text from PDF:");
-    //        Console.WriteLine(pdfText);
-
-           
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        Console.WriteLine($"Error processing PDF: {ex.Message}");
-    //    }
-    //}
-
-//    private static async Task<string> ExtractTextFromPdfAsync(string pdfUrl)
-//{
-//        try
-//        {
-//            using var httpClient = new HttpClient();
-
-//            // Download the PDF as a byte array
-//            var pdfBytes = await httpClient.GetByteArrayAsync(pdfUrl);
-
-//            // Check if the downloaded content is a valid PDF
-//            if (pdfBytes.Length < 5 || !pdfBytes.Take(5).SequenceEqual(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2d })) // Check for "%PDF-" header
-//            {
-//                throw new InvalidDataException("Downloaded file is not a valid PDF.");
-//            }
-
-//            using var pdfStream = new MemoryStream(pdfBytes);
-
-//            // Create a PdfDocument from the stream
-//            using var pdfDoc = new iText.Kernel.Pdf.PdfDocument(new PdfReader(pdfStream));
-
-//            // Extract text from the first page
-//            var page = pdfDoc.GetPage(1);
-//            var strategy = new SimpleTextExtractionStrategy();
-//            var text = PdfTextExtractor.GetTextFromPage(page, strategy);
-
-//            return text;
-//        }
-//        catch (HttpRequestException httpEx)
-//        {
-//            // Handle HTTP request errors
-//            Console.WriteLine($"HTTP Request error: {httpEx.Message}");
-//            throw;
-//        }
-//        catch (InvalidDataException dataEx)
-//        {
-//            // Handle invalid PDF data errors
-//            Console.WriteLine($"Invalid data error: {dataEx.Message}");
-//            throw;
-//        }
-//        catch (Exception ex)
-//        {
-//            // Handle other errors
-//            Console.WriteLine($"Unexpected error: {ex.Message}");
-//            throw;
-//        }
-//    }
 
     private static string ScanTextFromImage(string imagePath)
     {

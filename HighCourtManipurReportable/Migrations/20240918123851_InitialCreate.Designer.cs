@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HighCourtManipurReportable.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20240917123349_InitialCreate")]
+    [Migration("20240918123851_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -57,8 +57,8 @@ namespace HighCourtManipurReportable.Migrations
                     b.Property<string>("Citation")
                         .HasColumnType("text");
 
-                    b.Property<string[]>("Coram")
-                        .HasColumnType("text[]");
+                    b.Property<string>("Coram")
+                        .HasColumnType("text");
 
                     b.Property<int?>("CoramCount")
                         .HasColumnType("integer");
